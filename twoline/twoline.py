@@ -33,7 +33,7 @@ class TwoLineElement:
         fvalue = float(line1[53] + "." + line1[54:59])
         fexp = int(line1[59:61])
         self.bstar = fvalue * 10 ** fexp
-        self.ephtype = line1[62]
+        self.ephtype = int(line1[62])
         self.elnum = int(line1[64:68])
         
         # Process line 2
@@ -48,7 +48,41 @@ class TwoLineElement:
 
         # Compute epoch
         self.epoch = epoch_to_datetime(self.epochyr, self.epochdoy)
-        
+
+    def format(self):
+        # Format ndot term
+        if self.ndot < 0:
+            sign = "-"
+        else:
+            sign = " "
+        value = f"{math.fabs(self.ndot):10.8f}"
+        ndotstr = f"{sign:1s}{value[1:]:9s}"
+
+        # Format nddot term
+        if self.nddot == 0.0:
+            nddotstr = " 00000-0"
+        else:
+            fexp = int(math.log(math.fabs(self.nddot)) / math.log(10))
+            fvalue = (self.nddot / 10 ** fexp) * 100000
+            nddotstr = f"{fvalue:05.0f}{fexp:+02d}"
+
+        # Format B* drag term
+        if self.bstar == 0.0:
+            bstarstr = " 00000-0"
+        else:
+            fexp = int(math.log(math.fabs(self.bstar)) / math.log(10))
+            fvalue = (self.bstar / 10 ** fexp) * 100000
+            bstarstr = f"{fvalue:05.0f}{fexp:+02d}"
+
+        # Format lines
+        line0 = f"{self.name}"
+        line1 = f"1 {self.satno:05d}{self.classification:1s} {self.desig:8s} {self.epochyr:02d}{self.epochdoy:012.8f} " \
+                f"{ndotstr:10s} {nddotstr:8s} {bstarstr:8s} {self.ephtype:1d} {self.elnum:4d}0"
+        line2 = f"2 {self.satno:05d} {self.incl:8.4f} {self.node:8.4f} {self.ecc * 10000000:07.0f} {self.argp:8.4f} " \
+                f"{self.m:8.4f} {self.n:11.8f}{self.revnum:5d}0"
+
+        return line0, line1, line2
+    
     def __repr__(self):
         return "%s\n%s\n%s"%(self.line0, self.line1, self.line2)
 
@@ -72,6 +106,15 @@ class TwoLineElement:
                f"Mean motion (revolutions/day):         {self.n:>12}\n" \
                f"Revolution number at epoch:            {self.revnum:>12}"         
         return text
+
+def set_checksum(line):
+    s = 0
+    for c in line[:-1]:
+        if c.isdigit():
+            s += int(c)
+        if c == "-":
+            s += 1
+    return line[:-1]+"%d"%(s%10)        
     
 # From Jean Meeus' Astronomical Algorithms (chapter 7)
 def epoch_to_datetime(epochyr, epochdoy):
