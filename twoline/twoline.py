@@ -48,41 +48,7 @@ class TwoLineElement:
 
         # Compute epoch
         self.epoch = epoch_to_datetime(self.epochyr, self.epochdoy)
-
-    def format(self):
-        # Format ndot term
-        if self.ndot < 0:
-            sign = "-"
-        else:
-            sign = " "
-        value = f"{math.fabs(self.ndot):10.8f}"
-        ndotstr = f"{sign:1s}{value[1:]:9s}"
-
-        # Format nddot term
-        if self.nddot == 0.0:
-            nddotstr = " 00000-0"
-        else:
-            fexp = int(math.log(math.fabs(self.nddot)) / math.log(10))
-            fvalue = (self.nddot / 10 ** fexp) * 100000
-            nddotstr = f"{fvalue:05.0f}{fexp:+02d}"
-
-        # Format B* drag term
-        if self.bstar == 0.0:
-            bstarstr = " 00000-0"
-        else:
-            fexp = int(math.log(math.fabs(self.bstar)) / math.log(10))
-            fvalue = (self.bstar / 10 ** fexp) * 100000
-            bstarstr = f"{fvalue:05.0f}{fexp:+02d}"
-
-        # Format lines
-        line0 = f"{self.name}"
-        line1 = f"1 {self.satno:05d}{self.classification:1s} {self.desig:8s} {self.epochyr:02d}{self.epochdoy:012.8f} " \
-                f"{ndotstr:10s} {nddotstr:8s} {bstarstr:8s} {self.ephtype:1d} {self.elnum:4d}0"
-        line2 = f"2 {self.satno:05d} {self.incl:8.4f} {self.node:8.4f} {self.ecc * 10000000:07.0f} {self.argp:8.4f} " \
-                f"{self.m:8.4f} {self.n:11.8f}{self.revnum:5d}0"
-
-        return line0, line1, line2
-    
+   
     def __repr__(self):
         return "%s\n%s\n%s"%(self.line0, self.line1, self.line2)
 
@@ -107,6 +73,59 @@ class TwoLineElement:
                f"Revolution number at epoch:            {self.revnum:>12}"         
         return text
 
+    def print_tle(self):
+        print(f"{self.line0}\n{self.line1}\n{self.line2}")
+    
+    def format(self):
+        return format_tle(self.satno, self.epochyr, self.epochdoy, self.incl, self.node, self.ecc, self.argp, self.m, self.n,
+                          self.bstar, self.name, self.desig, self.classification,
+                          self.ndot, self.nddot, self.ephtype, self.elnum, self.revnum)
+    
+
+def format_tle(satno, epochyr, epochdoy, incl, node, ecc, argp, m, n, bstar=0, name="Test object", desig="20500A", classification="U",
+               ndot=0, nddot=0, ephtype=0, elnum=0, revnum=0):
+    # Format ndot term
+    ndotstr = format_ndot(ndot)
+    
+    # Format nddot term
+    nddotstr = format_bstar_or_nddot(nddot)
+    
+    # Format B* drag term
+    bstarstr = format_bstar_or_nddot(bstar)
+    
+    # Format lines
+    line0 = f"{name}"
+    line1 = f"1 {satno:05d}{classification:1s} {desig:8s} {epochyr:02d}{epochdoy:012.8f} " \
+            f"{ndotstr:10s} {nddotstr:8s} {bstarstr:8s} {ephtype:1d} {elnum:4d}0"
+    line2 = f"2 {satno:05d} {incl:8.4f} {node:8.4f} {ecc * 10000000:07.0f} {argp:8.4f} " \
+            f"{m:8.4f} {n:11.8f}{revnum:5d}0"
+    
+    return line0, set_checksum(line1), set_checksum(line2)
+    
+# Format ndot term
+def format_ndot(x):
+    if x < 0:
+        sign = "-"
+    else:
+        sign = " "
+    value = f"{math.fabs(x):10.8f}"
+    return f"{sign:1s}{value[1:]:9s}"
+    
+# Format bstar or nddot drag
+def format_bstar_or_nddot(x):
+    if x == 0.0:
+        return " 00000-0"
+    else:
+        fexp = int(math.log(math.fabs(x)) / math.log(10))
+        fvalue = (math.fabs(x) / 10 ** fexp) * 100000
+        if x < 0:
+            sign = "-"
+        else:
+            sign = " "
+        return f"{sign:1s}{fvalue:05.0f}{fexp:+02d}"
+
+    
+# Compute checksum
 def set_checksum(line):
     s = 0
     for c in line[:-1]:
