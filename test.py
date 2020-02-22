@@ -8,6 +8,4 @@ if __name__ == "__main__":
 
     tle = TwoLineElement(line0, line1, line2)
 
-    print(tle.name)
-    print(tle.id)
     print(tle)
