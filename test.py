@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-from twoline.twoline import TwoLineElement, format_tle
-from twoline.propagate import propagate
+from twoline.twoline import TwoLineElement
 from datetime import datetime
 
 if __name__ == "__main__":
@@ -14,10 +13,14 @@ if __name__ == "__main__":
     line1 = "1 25544U 98067A   20053.24093319  .00001847  00000-0  41427-4 0  9993"
     line2 = "2 25544  51.6429 202.1571 0004852 303.4083 121.5105 15.49190851214046"
 
-    tle = TwoLineElement(line0, line1, line2)
-    tnew = datetime(2020, 2, 23, 1, 2, 4, 0)
+    #tle = TwoLineElement(line0, line1, line2)
+    #tnew = datetime(2020, 2, 23, 1, 2, 4, 0)
     
-    newtle, converged = propagate(tle, tnew)
+    #newtle, converted = tle.propagate(tnew)
+    #tle.print_tle()
+    #newtle.print_tle()
+    #print(converged)
+
+    tle = TwoLineElement.from_parameters(99999, 20, 086.12345, 97.2, 100.0, 0.01234, 123.4567, 0123.4567, 14.567890, 5e-5)
+
     tle.print_tle()
-    newtle.print_tle()
-    print(converged)

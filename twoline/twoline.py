@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import math
+import numpy as np
 from datetime import datetime
+from astropy.time import Time
+from sgp4.api import Satrec, jday
 
 # Using definition from https://celestrak.com/columns/v04n03/
 class TwoLineElement:
@@ -16,14 +19,16 @@ class TwoLineElement:
 
         # Extract object name
         if self.line0[:2] == "0 ":
-            self.name = line0[2:]
+            self.name = self.line0[2:]
         else:
-            self.name = line0
+            self.name = self.line0
 
         # Process line 1
         self.satno = int(line1[2:7])
         self.classification = line1[7]
         self.desig = line1[9:17].rstrip()
+        self.desig_year = line1[9:11]
+        self.desig_id = line1[11:17].rstrip()
         self.epochyr = int(line1[18:20])
         self.epochdoy = float(line1[20:32])
         self.ndot = float(line1[33:43])
@@ -80,28 +85,70 @@ class TwoLineElement:
         return format_tle(self.satno, self.epochyr, self.epochdoy, self.incl, self.node, self.ecc, self.argp, self.m, self.n,
                           self.bstar, self.name, self.desig, self.classification,
                           self.ndot, self.nddot, self.ephtype, self.elnum, self.revnum)
-    
 
-def format_tle(satno, epochyr, epochdoy, incl, node, ecc, argp, m, n, bstar=0, name="Test object", desig="20500A", classification="U",
-               ndot=0, nddot=0, ephtype=0, elnum=0, revnum=0):
-    # Format ndot term
-    ndotstr = format_ndot(ndot)
+    def from_parameters(satno, epochyr, epochdoy, incl, node, ecc, argp, m, n, bstar=0, name="Test object", desig="20500A", classification="U",
+                        ndot=0, nddot=0, ephtype=0, elnum=0, revnum=0):
+
+        
+        # Compute epoch
+        epoch = epoch_to_datetime(epochyr, epochdoy)
+
+        # Format ndot term
+        ndotstr = format_ndot(ndot)
+        
+        # Format nddot term
+        nddotstr = format_bstar_or_nddot(nddot)
+        
+        # Format B* drag term
+        bstarstr = format_bstar_or_nddot(bstar)
+        
+        # Format lines
+        line0 = f"{name}"
+        line1 = set_checksum(f"1 {satno:05d}{classification:1s} {desig:8s} {epochyr:02d}{epochdoy:012.8f} " \
+            f"{ndotstr:10s} {nddotstr:8s} {bstarstr:8s} {ephtype:1d} {elnum:4d}0")
+        line2 = set_checksum(f"2 {satno:05d} {incl:8.4f} {node:8.4f} {ecc * 10000000:07.0f} {argp:8.4f} " \
+            f"{m:8.4f} {n:11.8f}{revnum:5d}0")
+
+        return TwoLineElement(line0, line1, line2)
     
-    # Format nddot term
-    nddotstr = format_bstar_or_nddot(nddot)
+    def propagate(self, tnew, drmin=1e-1, dvmin=1e-3, niter=100):
+        # New epoch
+        epochyr, epochdoy = datetime_to_epoch(tnew)
+        jd, fr = jday(tnew.year, tnew.month, tnew.day, tnew.hour, tnew.minute, tnew.second + tnew.microsecond / 1000000)
     
-    # Format B* drag term
-    bstarstr = format_bstar_or_nddot(bstar)
-    
-    # Format lines
-    line0 = f"{name}"
-    line1 = f"1 {satno:05d}{classification:1s} {desig:8s} {epochyr:02d}{epochdoy:012.8f} " \
-            f"{ndotstr:10s} {nddotstr:8s} {bstarstr:8s} {ephtype:1d} {elnum:4d}0"
-    line2 = f"2 {satno:05d} {incl:8.4f} {node:8.4f} {ecc * 10000000:07.0f} {argp:8.4f} " \
-            f"{m:8.4f} {n:11.8f}{revnum:5d}0"
-    
-    return line0, set_checksum(line1), set_checksum(line2)
-    
+        # Compute reference state vector
+        sat = Satrec.twoline2rv(self.line1, self.line2)
+        e, r, v = sat.sgp4(jd, fr)
+        r0, v0 = np.asarray(r), np.asarray(v)
+
+        # Start loop
+        rnew, vnew = r0, v0
+        converged = False
+        for i in range(niter):
+            # Convert state vector into new TLE
+            newtle = classical_elements(rnew, vnew, epochyr, epochdoy, self)
+        
+            # Propagate with SGP4
+            sat = Satrec.twoline2rv(newtle.line1, newtle.line2)
+            e, rtmp, vtmp = sat.sgp4(sat.jdsatepoch, sat.jdsatepochF)
+            rsgp4, vsgp4 = np.asarray(rtmp), np.asarray(vtmp)
+
+            # Vector difference and magnitudes
+            dr, dv = r0 - rsgp4, v0 - vsgp4
+            drm, dvm = np.linalg.norm(dr), np.linalg.norm(dv)
+        
+            # Exit check
+            if (np.abs(drm) < drmin) and (np.abs(dvm) < dvmin):
+                converged = True
+                break
+        
+            # Update state vector
+            rnew = rnew + dr
+            vnew = vnew + dv
+
+        return newtle, converged
+
+
 # Format ndot term
 def format_ndot(x):
     if x < 0:
@@ -195,3 +242,75 @@ def datetime_to_epoch(t):
     epochdoy = n + fday
 
     return epochyr, epochdoy
+
+
+def classical_elements(r, v, epochyr, epochdoy, tle):
+    """
+    Classical elements from position and velocity. Following Chapter 4.4 from 
+    'Methods of orbit determination for the micro computer' by Dan Boulet'.
+
+    r: position vector in kilometers
+    v: velocity vector in kilometers per second
+    """
+
+    # Constants
+    xke = 0.07436680 # Gaussian gravitational constant
+    xkmper = 6378.135 # Earth radius in kilometers
+    ae = 1.0
+    xmnpda = 1440.0 # Minutes per day
+    mu = 1.0
+    r2d = 180 / np.pi
+    twopi = 2 * np.pi
+
+    # Convert to fractional units
+    r = np.asarray(r) / xkmper
+    v = np.asarray(v) / (xke * xkmper * xmnpda / (ae * 86400))
+
+    # Compute vector magnitudes and cross products
+    rm = np.linalg.norm(r)
+    vm2 = np.dot(v, v)
+    rvm = np.dot(r, v)
+    h = np.cross(r, v)
+    chi = np.dot(h, h) / mu
+    k = np.array([0, 0, 1])
+    n = np.cross(k, h)
+    if (n[0] == 0) and (n[1] == 0):
+        n[0] = 1
+    nm = np.linalg.norm(n)
+    
+    # Eccentricity
+    e = (vm2 / mu - 1 / rm) * r - rvm / mu * v
+    ecc = np.linalg.norm(e)
+
+    # Semi major axis
+    a = (2 / rm - vm2 / mu)**(-1)
+
+    # Inclination
+    incl = np.arccos(h[2]/np.linalg.norm(h))
+
+    # RA of ascending node
+    node = np.mod(np.arctan2(n[1], n[0]), twopi)
+
+    # Argument of perigee
+    argp = np.mod(np.arccos(np.dot(n, e) / (nm * ecc)), twopi)
+    if e[2] < 0:
+        argp = twopi - argp
+
+    # Mean anomaly
+    xp = (chi - rm) / ecc
+    yp = rvm / ecc * np.sqrt(chi / mu)
+    b = a * np.sqrt(1 - ecc**2)
+    cx = xp / a + ecc
+    sx = yp / b
+    ee = np.arctan2(sx, cx)
+    m = np.mod(ee - ecc * sx, twopi)
+
+    # Mean motion
+    n = xke * np.sqrt(mu / a**3) * 1440 / twopi
+
+    line0, line1, line2 = format_tle(tle.satno, epochyr, epochdoy, incl * r2d, node * r2d, ecc,
+                                     argp * r2d, m * r2d, n, tle.bstar, tle.name, tle.desig, tle.classification,
+                                     tle.ndot, tle.nddot, tle.ephtype, tle.elnum, tle.revnum)
+
+    return TwoLineElement(line0, line1, line2)
+
