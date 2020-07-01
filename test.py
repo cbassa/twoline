@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
 from twoline.twoline import TwoLineElement
+from twoline.twoline import datetime_to_epoch, rv2tle
 from datetime import datetime
 
 if __name__ == "__main__":
@@ -25,3 +27,12 @@ if __name__ == "__main__":
     # Define manual TLE
     tle = TwoLineElement.from_parameters(99999, 20, 086.12345, 97.2, 100.0, 0.01234, 123.4567, 0123.4567, 14.567890, 5e-5)
     tle.print_tle()
+
+    # Convert state vector to TLE
+    r = np.array([-1983.2368986279, -6123.14431568009, 2521.39798828105])
+    v = np.array([-0.151890429292193, 2.94366617210922,  7.00212695816602])
+    tepoch = datetime(2020, 6, 29, 3, 33, 32)
+    
+    newtle, converged = rv2tle(74001, tepoch, r, v)
+    newtle.print_tle()
+    print(converged)

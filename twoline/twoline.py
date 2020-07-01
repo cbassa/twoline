@@ -148,7 +148,40 @@ class TwoLineElement:
 
         return newtle, converged
 
+def rv2tle(satno, tnew, r0, v0, drmin=1e-1, dvmin=1e-3, niter=100):
+    # New epoch
+    epochyr, epochdoy = datetime_to_epoch(tnew)
 
+    # Dummy tle
+    tle = TwoLineElement.from_parameters(satno, epochyr, epochdoy, 90.0, 0.0, 0.0001, 0.0, 0.0, 14.0, 5e-5)
+
+    # Start loop
+    rnew, vnew = r0, v0
+    converged = False
+    for i in range(niter):
+        # Convert state vector into new TLE
+        newtle = classical_elements(rnew, vnew, epochyr, epochdoy, tle)
+        
+        # Propagate with SGP4
+        sat = Satrec.twoline2rv(newtle.line1, newtle.line2)
+        e, rtmp, vtmp = sat.sgp4(sat.jdsatepoch, sat.jdsatepochF)
+        rsgp4, vsgp4 = np.asarray(rtmp), np.asarray(vtmp)
+
+        # Vector difference and magnitudes
+        dr, dv = r0 - rsgp4, v0 - vsgp4
+        drm, dvm = np.linalg.norm(dr), np.linalg.norm(dv)
+        
+        # Exit check
+        if (np.abs(drm) < drmin) and (np.abs(dvm) < dvmin):
+            converged = True
+            break
+        
+        # Update state vector
+        rnew = rnew + dr
+        vnew = vnew + dv
+
+    return newtle, converged
+    
 # Format ndot term
 def format_ndot(x):
     if x < 0:
