@@ -308,9 +308,6 @@ def classical_elements(r, v, epochyr, epochdoy, tle):
     # Mean motion
     n = xke * np.sqrt(mu / a**3) * 1440 / twopi
 
-    line0, line1, line2 = format_tle(tle.satno, epochyr, epochdoy, incl * r2d, node * r2d, ecc,
-                                     argp * r2d, m * r2d, n, tle.bstar, tle.name, tle.desig, tle.classification,
-                                     tle.ndot, tle.nddot, tle.ephtype, tle.elnum, tle.revnum)
-
-    return TwoLineElement(line0, line1, line2)
-
+    return TwoLineElement.from_parameters(tle.satno, epochyr, epochdoy, incl * r2d, node * r2d, ecc,
+                                          argp * r2d, m * r2d, n, tle.bstar, tle.name, tle.desig, tle.classification,
+                                          tle.ndot, tle.nddot, tle.ephtype, tle.elnum, tle.revnum)
